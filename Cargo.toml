@@ -1,0 +1,8 @@
+[package]
+name = "pixspread"
+version = "0.1.0"
+authors = ["Shawn Bird <shawn.cameron.bird@gmail.com>"]
+
+[dependencies]
+raster = "0.2.0"
+argparse = "0.2.2"
