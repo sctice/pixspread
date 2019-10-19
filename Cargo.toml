@@ -1,6 +1,7 @@
 [package]
 name = "pixspread"
 version = "0.1.0"
+edition = "2018"
 authors = ["Shawn Bird <shawn.cameron.bird@gmail.com>"]
 
 [dependencies]

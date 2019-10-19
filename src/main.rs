@@ -2,7 +2,7 @@ extern crate argparse;
 extern crate raster;
 
 use argparse::{ArgumentParser, Store, StoreTrue};
-use raster::Image;
+use raster::{Image, error::RasterError};
 
 #[derive(Clone, Copy)]
 enum Offset {
@@ -18,15 +18,30 @@ struct Options {
 
 fn main() {
     let options = parse_options();
+    std::process::exit(match run(options) {
+        Ok(_) => 0,
+        Err(err) => {
+            eprintln!("{}", err);
+            1
+        }
+    });
+}
 
-    let mut image = raster::open(&options.input_path)
-        .expect(&format!("cannot read: {}", options.input_path));
+fn run(options: Options) -> Result<(), String> {
+    let mut image = raster::open(&options.input_path).map_err(|err| match err {
+        RasterError::Io(io_err) => format!("{}: {}", options.input_path, io_err),
+        _ => format!("{:?}", err)
+    })?;
 
-    expand_image_pixels(&mut image, options.offset)
-        .expect("Pixel offset out of bounds");
+    expand_image_pixels(&mut image, options.offset).map_err(|err| match err {
+        RasterError::PixelOutOfBounds(x, y) => format!("Pixel out of bounds: ({}, {})", x, y),
+        _ => format!("{:?}", err)
+    })?;
 
-    raster::save(&image, &options.output_path)
-        .expect("Failed to save image");
+    raster::save(&image, &options.output_path).map_err(|err| match err {
+        RasterError::Io(io_err) => format!("{}: {}", options.output_path, io_err),
+        _ => format!("{:?}", err)
+    })
 }
 
 fn parse_options() -> Options {
@@ -74,41 +89,29 @@ fn parse_options() -> Options {
     options
 }
 
-fn expand_image_pixels(image: &mut Image, offset: Offset) -> Result<(), &'static str> {
+fn expand_image_pixels(image: &mut Image, offset: Offset) -> Result<(), RasterError> {
     match offset {
         Offset::Col(x) => expand_image_col(image, x as i32),
         Offset::Row(y) => expand_image_row(image, y as i32),
     }
 }
 
-fn expand_image_col(image: &mut Image, x: i32) -> Result<(), &'static str> {
-    if x > image.width {
-        return Err("pixel out of bounds");
-    }
-
+fn expand_image_col(image: &mut Image, x: i32) -> Result<(), RasterError> {
     for write_y in 0..image.height {
         for write_x in 0..image.width {
-            let p = image.get_pixel(x, write_y).unwrap();
-            image.set_pixel(write_x, write_y, p)
-                .expect("failed to write pixel");
+            let p = image.get_pixel(x, write_y)?;
+            image.set_pixel(write_x, write_y, p)?
         }
     }
-
     Ok(())
 }
 
-fn expand_image_row(image: &mut Image, y: i32) -> Result<(), &'static str> {
-    if y > image.height {
-        return Err("pixel out of bounds");
-    }
-
+fn expand_image_row(image: &mut Image, y: i32) -> Result<(), RasterError> {
     for write_y in 0..image.height {
         for write_x in 0..image.width {
-            let p = image.get_pixel(write_x, y).unwrap();
-            image.set_pixel(write_x, write_y, p)
-                .expect("failed to write pixel");
+            let p = image.get_pixel(write_x, y)?;
+            image.set_pixel(write_x, write_y, p)?
         }
     }
-
     Ok(())
 }
