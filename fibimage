@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import sys
+
+
+PIXSPREAD = "./target/release/pixspread"
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.stderr.write("Missing file to partition\n")
+    image_path = sys.argv[1]
+    try:
+        width, height = read_image_size(image_path)
+        partition_image(image_path, width, height)
+    except ValueError:
+        sys.stderr.write("Unable to read width from image\n")
+
+
+def partition_image(image_path, width, height):
+    slices = list(fib_partition(width))
+    frame = Frame([width] + slices, height)
+    frame.fill_next(image_path)
+    offset = 0
+    for width in slices:
+        slice_path = slice_image(image_path, offset, width, height)
+        offset += width
+        frame.fill_next(slice_path)
+
+
+def slice_image(image_path, offset, width, height):
+    out_path = f"slice-{offset:0>6d}.png"
+    subprocess.run([
+        PIXSPREAD, "-i", image_path, "-p", str(offset), "-o", out_path
+    ])
+    subprocess.run([
+        "gm", "mogrify", "-crop", f"{width}x{height}+0+0", out_path
+    ])
+    return out_path
+
+
+class Frame:
+    def __init__(self, slices, height, padding = 8, path = "out.png"):
+        self.slices = slices
+        self.height = height
+        self.padding = padding
+        self.path = path
+        self.tmp_path = "out.tmp.png"
+        self.offset = 0
+        self.create_canvas()
+
+    def create_canvas(self):
+        width = sum(self.slices) + (len(self.slices) + 1) * self.padding
+        height = self.height + 2 * self.padding
+        subprocess.run([
+            "gm", "convert",
+            "-size", f"{width}x{height}", "xc:white",
+            self.path
+        ])
+
+    def fill_next(self, slice_path):
+        if self.offset == len(self.slices):
+            raise IndexError
+        width = self.slices[self.offset]
+        x = sum(self.slices[0:self.offset]) + self.padding * (self.offset  + 1)
+        subprocess.run([
+            "gm", "composite",
+            "-geometry", f"+{x}+{self.padding}",
+            slice_path, self.path, self.tmp_path
+        ])
+        os.rename(self.tmp_path, self.path)
+        self.offset += 1
+
+
+def read_image_size(path):
+    size = subprocess.run([
+        "gm", "identify", "-format", "%w %h", path
+    ], stdout=subprocess.PIPE).stdout
+    return map(int, size.split())
+
+
+def fib_partition(n):
+    fib = iter_fibs()
+    total = 0
+    slices = []
+    while total < n:
+        f = next(fib)
+        if total + f < n:
+            slices.append(f)
+        else:
+            slices[-1] += n - total
+        total += f
+    return reversed(slices)
+
+
+def iter_fibs():
+    a, b = 1, 1
+    while True:
+        a, b, = b, a + b
+        yield a
+
+
+if __name__ == '__main__':
+    main()
